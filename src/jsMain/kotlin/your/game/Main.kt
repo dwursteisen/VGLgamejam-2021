@@ -38,6 +38,6 @@ fun main() {
             )
         },
         // Creation of your game
-        gameFactory = { MyGame(it) }
+        gameFactory = { Title(it) }
     ).start() // ! Don't forget to call this method to start your game!
 }

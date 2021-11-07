@@ -18,7 +18,7 @@ object Main {
                     // Screen configuration used for your game (ie: how should render your game)
                     gameScreenConfiguration = GameScreenConfiguration.WithRatio(16f / 9f),
                     // Is your game should use show debug information? (hitbox, ...)
-                    debug = true,
+                    debug = false,
                     // (JVM Specific configuration)
                     // Configuration of the window use to render your game
                     window = Window(
@@ -32,7 +32,7 @@ object Main {
                 )
             },
             // Creation of your game
-            gameFactory = { MyGame(it) }
+            gameFactory = { Title(it) }
         ).start() // Don't forget to call the start method to run your game!
     }
 }

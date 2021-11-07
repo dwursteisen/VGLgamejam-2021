@@ -4,6 +4,9 @@ import com.github.dwursteisen.minigdx.GameContext
 import com.github.dwursteisen.minigdx.Seconds
 import com.github.dwursteisen.minigdx.ecs.Engine
 import com.github.dwursteisen.minigdx.ecs.components.Component
+import com.github.dwursteisen.minigdx.ecs.components.ScriptComponent
+import com.github.dwursteisen.minigdx.ecs.components.TextComponent
+import com.github.dwursteisen.minigdx.ecs.components.text.WriteText
 import com.github.dwursteisen.minigdx.ecs.entities.Entity
 import com.github.dwursteisen.minigdx.ecs.entities.EntityFactory
 import com.github.dwursteisen.minigdx.ecs.entities.position
@@ -12,16 +15,25 @@ import com.github.dwursteisen.minigdx.ecs.physics.AABBCollisionResolver
 import com.github.dwursteisen.minigdx.ecs.systems.EntityQuery
 import com.github.dwursteisen.minigdx.ecs.systems.System
 import com.github.dwursteisen.minigdx.ecs.systems.TemporalSystem
+import com.github.dwursteisen.minigdx.file.Font
 import com.github.dwursteisen.minigdx.file.get
 import com.github.dwursteisen.minigdx.game.Game
+import com.github.dwursteisen.minigdx.game.Storyboard
+import com.github.dwursteisen.minigdx.game.StoryboardAction
+import com.github.dwursteisen.minigdx.game.StoryboardEvent
 import com.github.dwursteisen.minigdx.graph.GraphScene
+import com.github.dwursteisen.minigdx.input.InputHandler
 import com.github.dwursteisen.minigdx.input.Key
 import com.github.dwursteisen.minigdx.math.Interpolations
 import com.github.dwursteisen.minigdx.math.Vector3
 import your.game.EnemyMove.Companion.WAITING_HIT
 import kotlin.random.Random
 
+class Chrono(var time: Seconds = 60f) : Component
+class Score(var score: Int = 0, var coolDown: Seconds = 0.4f /* = kotlin.Float */) : Component
+
 class Player(
+    var score: Int = 0,
     var life: Int = 3,
     var coolDown: Seconds = PlayerSystem.COOLDOWN
 ) : Component
@@ -35,6 +47,7 @@ class Enemy(
     var target: Vector3 = Vector3(),
     var ready: Boolean = false,
     var waitingPoint: Entity? = null,
+    var letter: Entity? = null,
     var waitingHit: Float = WAITING_HIT
 ) : Component {
 
@@ -46,7 +59,7 @@ class Enemy(
     }
 }
 
-class Dying() : Component
+class Dying(val letter: Entity) : Component
 
 class Hit : Component
 class Spawn : Component
@@ -54,6 +67,8 @@ class Start(val intex: Int = 1, var occupied: Boolean = false) : Component
 
 class Left : Component
 class Right : Component
+
+class Track(val target: Entity) : Component
 
 class FreeWaingPoint(
     val index: Int,
@@ -65,6 +80,39 @@ class FreeWaingPoint(
 class EnemyHit() : Event
 
 class EndGame() : Event
+
+class ScoreSystem : System(EntityQuery.of(Score::class, TextComponent::class)) {
+
+    val players by interested(EntityQuery.of(Player::class))
+
+    override fun update(delta: Seconds, entity: Entity) {
+        val s = players.first().get(Player::class).score.toString()
+        entity.get(TextComponent::class).text.content = "score: $s pts"
+        val score = entity.get(Score::class)
+        score.coolDown -= delta
+        if (score.coolDown <= 0f) {
+            score.coolDown = 0f
+        }
+    }
+
+    override fun onEvent(event: Event, entityQuery: EntityQuery?) {
+        if (event is EnemyHit) {
+            entities.forEach {
+                val coolDown = it.get(Score::class).coolDown
+                if (coolDown <= 0f) {
+                    it.position.setLocalScale(x = 1.5f, y = 1.5f)
+                }
+            }
+        }
+    }
+}
+
+class TrackSystem : System(EntityQuery.of(Track::class)) {
+
+    override fun update(delta: Seconds, entity: Entity) {
+        entity.position.setLocalTranslation(x = entity.get(Track::class).target.position.localTranslation.x)
+    }
+}
 
 class EnemySpawner(val maxLife: Int = 3, val leftKeySet: Set<Key>, val rightKeySet: Set<Key>) : TemporalSystem(0.5f) {
 
@@ -117,6 +165,35 @@ class EnemySpawner(val maxLife: Int = 3, val leftKeySet: Set<Key>, val rightKeyS
         }
     }
 
+    val keyToStr = mapOf(
+        Key.A to "A",
+        Key.B to "B",
+        Key.C to "C",
+        Key.D to "D",
+        Key.E to "E",
+        Key.F to "F",
+        Key.G to "G",
+        Key.H to "H",
+        Key.I to "I",
+        Key.J to "J",
+        Key.K to "K",
+        Key.L to "L",
+        Key.M to "M",
+        Key.N to "N",
+        Key.O to "O",
+        Key.P to "P",
+        Key.Q to "Q",
+        Key.R to "R",
+        Key.S to "S",
+        Key.T to "T",
+        Key.U to "U",
+        Key.V to "V",
+        Key.W to "W",
+        Key.X to "X",
+        Key.Y to "Y",
+        Key.Z to "Z"
+    )
+
     private fun create(side: Component, spawn: Entity, waitingPoint: Entity, keySet: Set<Key>): Entity {
         val entity = entityFactory.createFromTemplate("enemy1")
 
@@ -125,8 +202,10 @@ class EnemySpawner(val maxLife: Int = 3, val leftKeySet: Set<Key>, val rightKeyS
         entity.get(Enemy::class).key = keySet.random()
         val numberOfLive = numberOfLive()
         entity.get(Enemy::class).life = numberOfLive
+        entity.get(Enemy::class).letter!!.get(TextComponent::class).text.content =
+            keyToStr[entity.get(Enemy::class).key]!!
 
-        entity.position.setLocalScale(z = getScale(numberOfLive))
+        entity.position.setLocalScale(y = getScale(numberOfLive))
         entity.position.setLocalTranslation(spawn.position.localTranslation)
         entity.get(Enemy::class).start.set(spawn.position.localTranslation)
 
@@ -136,12 +215,15 @@ class EnemySpawner(val maxLife: Int = 3, val leftKeySet: Set<Key>, val rightKeyS
         return entity
     }
 
-    private fun getScale(life: Int): Float {
-        return when (life) {
-            1 -> 0.5f
-            2 -> 0.75f
-            3 -> 1f
-            else -> 1f
+    companion object {
+
+        fun getScale(life: Int): Float {
+            return when (life) {
+                0 -> 0.5f
+                1 -> 0.75f
+                2 -> 1f
+                else -> 1f
+            }
         }
     }
 
@@ -223,8 +305,13 @@ class EnemyMove : System(EntityQuery.Companion.of(Enemy::class)) {
 class EnemyDying : System(EntityQuery.of(Dying::class)) {
 
     override fun update(delta: Seconds, entity: Entity) {
+        entity.get(Dying::class).letter.destroy()
         entity.destroy()
     }
+}
+
+fun InputHandler.isAnyJustKeyPressed(vararg keys: Key): Boolean {
+    return keys.any { isKeyJustPressed(it) }
 }
 
 class PlayerSystem(leftKeySet: Set<Key>, rightKeySet: Set<Key>) :
@@ -242,24 +329,24 @@ class PlayerSystem(leftKeySet: Set<Key>, rightKeySet: Set<Key>) :
 
     override fun update(delta: Seconds, entity: Entity) {
         if (entity.get(Player::class).coolDown <= 0f) {
-            if (input.isAnyKeysPressed(*left)) {
+            if (input.isAnyJustKeyPressed(*left)) {
                 entity.position.setLocalTranslation(x = -1f)
                 entity.get(Player::class).coolDown = COOLDOWN
 
                 leftEnemies.forEach { enemy ->
                     if (enemy.get(Enemy::class).waitingPoint!!.get(Start::class).intex == 1 && enemy.get(Enemy::class).ready) {
-                        if (input.isKeyPressed(enemy.get(Enemy::class).key!!)) {
+                        if (input.isKeyJustPressed(enemy.get(Enemy::class).key!!)) {
                             hitEnemy(enemy)
                         }
                     }
                 }
-            } else if (input.isAnyKeysPressed(*right)) {
+            } else if (input.isAnyJustKeyPressed(*right)) {
                 entity.position.setLocalTranslation(x = 1f)
                 entity.get(Player::class).coolDown = COOLDOWN
 
                 rightEnemies.forEach { enemy ->
                     if (enemy.get(Enemy::class).waitingPoint!!.get(Start::class).intex == 1 && enemy.get(Enemy::class).ready) {
-                        if (input.isKeyPressed(enemy.get(Enemy::class).key!!)) {
+                        if (input.isKeyJustPressed(enemy.get(Enemy::class).key!!)) {
                             hitEnemy(enemy)
                         }
                     }
@@ -277,11 +364,12 @@ class PlayerSystem(leftKeySet: Set<Key>, rightKeySet: Set<Key>) :
     private fun hitEnemy(enemy: Entity) {
         val component = enemy.get(Enemy::class)
         component.life--
-        if (component.life <= 0) {
+        if (component.life < 0) {
             enemy.remove(Enemy::class)
-            enemy.add(Dying())
-
+            enemy.add(Dying(component.letter!!))
             freeWaitingPoint(enemy)
+        } else {
+            enemy.position.setLocalScale(y = EnemySpawner.getScale(component.life))
         }
     }
 
@@ -292,6 +380,8 @@ class PlayerSystem(leftKeySet: Set<Key>, rightKeySet: Set<Key>) :
                 if (it.get(Player::class).life < 0) {
                     emit(EndGame())
                 }
+
+                it.get(Player::class).score += 1
             }
         }
     }
@@ -309,10 +399,20 @@ fun System.freeWaitingPoint(enemy: Entity) {
     emit(FreeWaingPoint(waitingPoint.intex + 1, enemy.hasComponent(Left::class), component.waitingPoint!!))
 }
 
+@OptIn(ExperimentalStdlibApi::class)
 class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = false) : Game {
 
-    @OptIn(ExperimentalStdlibApi::class)
     private val scene by gameContext.fileHandler.get<GraphScene>("map.protobuf")
+
+    private val font by gameContext.fileHandler.get<Font>("font3")
+
+    override fun createStoryBoard(event: StoryboardEvent): StoryboardAction {
+        return if(event is ShowScoreEvent) {
+            Storyboard.replaceWith { Title(gameContext, "Share your (incredible) score of ${event.score}!\nPress Space to restart") }
+        } else {
+            Storyboard.stayHere()
+        }
+    }
 
     override fun createEntities(entityFactory: EntityFactory) {
         // Create all entities needed at startup
@@ -325,8 +425,17 @@ class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = fals
                 entity.add(Player())
             } else if (node.name.startsWith("enemy")) {
                 entityFactory.registerTemplate(node.name) {
-                    entityFactory.createFromNode(node)
+
+                    val e = entityFactory.createFromNode(node)
                         .add(Enemy())
+
+                    val letter = entityFactory.createText(WriteText(" "), font)
+                    letter.add(Track(e))
+
+                    e.get(Enemy::class).letter = letter
+                    // letter.attachTo(e)
+                    letter.position.setLocalTranslation(y = 4f)
+                    e
                 }
             } else if (node.name == "hit") {
                 entityFactory.createFromNode(node).add(Hit())
@@ -338,6 +447,10 @@ class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = fals
                 entityFactory.createFromNode(node).add(Start(extractIndex(node.name))).add(Left())
             } else if (node.name.startsWith("start-right")) {
                 entityFactory.createFromNode(node).add(Start(extractIndex(node.name))).add(Right())
+            } else if(node.name.startsWith("chrono")) {
+                entityFactory.createText(WriteText("60:00"), font, node).add(Chrono())
+            } else if(node.name.startsWith("score")) {
+                entityFactory.createText(WriteText("0000"), font, node).add(Score())
             } else {
                 entityFactory.createFromNode(node)
             }
@@ -369,7 +482,35 @@ class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = fals
             PlayerSystem(leftKeySet, rightKeySet),
             EnemySpawner(leftKeySet = leftKeySet, rightKeySet = rightKeySet),
             EnemyMove(),
-            EnemyDying()
+            EnemyDying(),
+            TrackSystem(),
+            ScoreSystem(),
+            ChronoSystem()
         )
+    }
+}
+
+class ChronoSystem : TemporalSystem(0.01f, EntityQuery.Companion.of(Chrono::class, TextComponent::class)) {
+
+    val score by interested(EntityQuery.of(Player::class))
+
+    override fun update(delta: Seconds, entity: Entity) {
+        entity.get(Chrono::class).time -= delta
+
+        if(entity.get(Chrono::class).time < 0f) {
+            val s = score.first().get(Player::class).score
+
+            emit(ShowScoreEvent(s))
+        }
+    }
+
+    override fun timeElapsed() {
+        entities.forEach {
+            val t = it.get(Chrono::class).time
+
+            val seconds = t.toInt()
+            val millis = ((t - seconds) * 100).toInt()
+            it.get(TextComponent::class).text.content = "$seconds:$millis"
+        }
     }
 }

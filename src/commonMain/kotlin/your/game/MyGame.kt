@@ -4,7 +4,6 @@ import com.github.dwursteisen.minigdx.GameContext
 import com.github.dwursteisen.minigdx.Seconds
 import com.github.dwursteisen.minigdx.ecs.Engine
 import com.github.dwursteisen.minigdx.ecs.components.Component
-import com.github.dwursteisen.minigdx.ecs.components.ScriptComponent
 import com.github.dwursteisen.minigdx.ecs.components.TextComponent
 import com.github.dwursteisen.minigdx.ecs.components.text.WriteText
 import com.github.dwursteisen.minigdx.ecs.entities.Entity
@@ -16,6 +15,7 @@ import com.github.dwursteisen.minigdx.ecs.systems.EntityQuery
 import com.github.dwursteisen.minigdx.ecs.systems.System
 import com.github.dwursteisen.minigdx.ecs.systems.TemporalSystem
 import com.github.dwursteisen.minigdx.file.Font
+import com.github.dwursteisen.minigdx.file.Sound
 import com.github.dwursteisen.minigdx.file.get
 import com.github.dwursteisen.minigdx.game.Game
 import com.github.dwursteisen.minigdx.game.Storyboard
@@ -259,7 +259,7 @@ class EnemyMove : System(EntityQuery.Companion.of(Enemy::class)) {
                 enemy.waitingHit -= delta
                 if (enemy.waitingHit < 0f) {
                     enemy.waitingHit = WAITING_HIT
-                    emit(EnemyHit())
+
                 }
             }
             return
@@ -306,6 +306,7 @@ class EnemyDying : System(EntityQuery.of(Dying::class)) {
 
     override fun update(delta: Seconds, entity: Entity) {
         entity.get(Dying::class).letter.destroy()
+        emit(EnemyHit())
         entity.destroy()
     }
 }
@@ -314,7 +315,7 @@ fun InputHandler.isAnyJustKeyPressed(vararg keys: Key): Boolean {
     return keys.any { isKeyJustPressed(it) }
 }
 
-class PlayerSystem(leftKeySet: Set<Key>, rightKeySet: Set<Key>) :
+class PlayerSystem(leftKeySet: Set<Key>, rightKeySet: Set<Key>, val sound: List<Sound>) :
     System(EntityQuery.Companion.of(Player::class)) {
 
     private val left = leftKeySet.toTypedArray()
@@ -365,6 +366,7 @@ class PlayerSystem(leftKeySet: Set<Key>, rightKeySet: Set<Key>) :
         val component = enemy.get(Enemy::class)
         component.life--
         if (component.life < 0) {
+            sound.random().play()
             enemy.remove(Enemy::class)
             enemy.add(Dying(component.letter!!))
             freeWaitingPoint(enemy)
@@ -400,15 +402,23 @@ fun System.freeWaitingPoint(enemy: Entity) {
 }
 
 @OptIn(ExperimentalStdlibApi::class)
-class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = false) : Game {
+class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = true) : Game {
 
     private val scene by gameContext.fileHandler.get<GraphScene>("map.protobuf")
 
     private val font by gameContext.fileHandler.get<Font>("font3")
+    private val a by gameContext.fileHandler.get<Sound>("a.mp3")
+    private val b by gameContext.fileHandler.get<Sound>("b.mp3")
+    private val c by gameContext.fileHandler.get<Sound>("c.mp3")
 
     override fun createStoryBoard(event: StoryboardEvent): StoryboardAction {
-        return if(event is ShowScoreEvent) {
-            Storyboard.replaceWith { Title(gameContext, "Share your (incredible) score of ${event.score}!\nPress Space to restart") }
+        return if (event is ShowScoreEvent) {
+            Storyboard.replaceWith {
+                Title(
+                    gameContext,
+                    "Share your (incredible) score of ${event.score}!\nPress Space to restart"
+                )
+            }
         } else {
             Storyboard.stayHere()
         }
@@ -447,9 +457,9 @@ class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = fals
                 entityFactory.createFromNode(node).add(Start(extractIndex(node.name))).add(Left())
             } else if (node.name.startsWith("start-right")) {
                 entityFactory.createFromNode(node).add(Start(extractIndex(node.name))).add(Right())
-            } else if(node.name.startsWith("chrono")) {
+            } else if (node.name.startsWith("chrono")) {
                 entityFactory.createText(WriteText("60:00"), font, node).add(Chrono())
-            } else if(node.name.startsWith("score")) {
+            } else if (node.name.startsWith("score")) {
                 entityFactory.createText(WriteText("0000"), font, node).add(Score())
             } else {
                 entityFactory.createFromNode(node)
@@ -464,22 +474,22 @@ class MyGame(override val gameContext: GameContext, val isAzerty: Boolean = fals
     override fun createSystems(engine: Engine): List<System> {
         val (leftKeySet, rightKeySet) = if (isAzerty) {
             setOf(
-                Key.Q, Key.S, Key.D, Key.F
+                Key.S, Key.D, Key.F
             ) to setOf(
-                Key.J, Key.K, Key.L, Key.M
+                Key.J, Key.K, Key.L
             )
         } else {
             // Workman layout see https://workmanlayout.org/
             setOf(
-                Key.A, Key.S, Key.H, Key.T
+                Key.S, Key.H, Key.T
             ) to setOf(
-                Key.N, Key.E, Key.O, Key.I
+                Key.N, Key.E, Key.O
             )
         }
 
         // Create all systems used by the game
         return listOf(
-            PlayerSystem(leftKeySet, rightKeySet),
+            PlayerSystem(leftKeySet, rightKeySet, listOf(a, b, c)),
             EnemySpawner(leftKeySet = leftKeySet, rightKeySet = rightKeySet),
             EnemyMove(),
             EnemyDying(),
@@ -497,7 +507,7 @@ class ChronoSystem : TemporalSystem(0.01f, EntityQuery.Companion.of(Chrono::clas
     override fun update(delta: Seconds, entity: Entity) {
         entity.get(Chrono::class).time -= delta
 
-        if(entity.get(Chrono::class).time < 0f) {
+        if (entity.get(Chrono::class).time < 0f) {
             val s = score.first().get(Player::class).score
 
             emit(ShowScoreEvent(s))

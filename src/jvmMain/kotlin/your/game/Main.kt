@@ -18,7 +18,7 @@ object Main {
                     // Screen configuration used for your game (ie: how should render your game)
                     gameScreenConfiguration = GameScreenConfiguration.WithRatio(16f / 9f),
                     // Is your game should use show debug information? (hitbox, ...)
-                    debug = false,
+                    debug = true,
                     // (JVM Specific configuration)
                     // Configuration of the window use to render your game
                     window = Window(
